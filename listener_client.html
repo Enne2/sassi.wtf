@@ -1,0 +1,113 @@
+<html><head>
+<meta http-equiv="content-type" content="text/html; charset=windows-1252"> 
+     <script type="text/javascript" src="127.0.0.1_files/adapter-latest.js"></script> 
+     <script type="text/javascript"> 
+       var html5VideoElement; 
+       var websocketConnection; 
+       var webrtcPeerConnection; 
+       var webrtcConfiguration; 
+       var reportError; 
+  
+       var peer_id = Math.floor(Math.random() * (9000 - 10) + 10).toString();
+       function onLocalDescription(desc) { 
+         console.log("Local description: " + JSON.stringify(desc)); 
+         webrtcPeerConnection.setLocalDescription(desc).then(function() { 
+           websocketConnection.send(JSON.stringify({"sdp": webrtcPeerConnection.localDescription })); 
+         }).catch(reportError); 
+       } 
+  
+  
+       function onIncomingSDP(sdp) { 
+         console.log("Incoming SDP: " + JSON.stringify(sdp)); 
+         webrtcPeerConnection.setRemoteDescription(sdp).catch(reportError); 
+         webrtcPeerConnection.createAnswer().then(onLocalDescription).catch(reportError); 
+       } 
+  
+  
+       function onIncomingICE(ice) { 
+         var candidate = new RTCIceCandidate(ice); 
+         console.log("Incoming ICE: " + JSON.stringify(ice)); 
+         webrtcPeerConnection.addIceCandidate(candidate).catch(reportError); 
+       } 
+  
+  
+       function onAddRemoteStream(event) { 
+         html5VideoElement.srcObject = event.streams[0]; 
+       } 
+  
+  
+       function onIceCandidate(event) { 
+         if (event.candidate == null) 
+           return; 
+  
+         console.log("Sending ICE candidate out: " + JSON.stringify(event.candidate)); 
+         websocketConnection.send(JSON.stringify({ "ice": event.candidate })); 
+       } 
+  
+  
+       function onServerMessage(event) { 
+         var msg; 
+  
+         try { 
+           msg = JSON.parse(event.data); 
+         } catch (e) { 
+           return; 
+         } 
+        	
+  
+         if (!webrtcPeerConnection) { 
+           webrtcPeerConnection = new RTCPeerConnection(webrtcConfiguration); 
+           webrtcPeerConnection.ontrack = onAddRemoteStream; 
+           webrtcPeerConnection.onicecandidate = onIceCandidate; 
+         } 
+  
+         if (msg.sdp) 
+      		onIncomingSDP(msg.sdp);
+      	 else if(msg.ice){
+           onIncomingICE(msg.ice);
+           console.log("data", msg.ice);
+           
+         } 
+       } 
+  
+  
+       function playStream(videoElement, hostname, port, path, configuration, reportErrorCB) { 
+         var l = window.location;
+         var wsHost = (hostname != undefined) ? hostname : l.hostname; 
+         var wsPort = (port != undefined) ? port : l.port; 
+         var wsPath = (path != undefined) ? path : "ws"; 
+         if (wsPort) 
+          wsPort = ":" + wsPort; 
+        var wsUrl = "wss://" + wsHost + wsPort + "/" + wsPath; 
+  
+         html5VideoElement = videoElement; 
+         webrtcConfiguration = configuration; 
+         reportError = (reportErrorCB != undefined) ? reportErrorCB : function(text) {}; 
+  
+         websocketConnection = new WebSocket(wsUrl); 
+         /* When connected, immediately register with the server */
+	    websocketConnection.addEventListener('open', (event) => {
+		document.getElementById("peer-id").textContent = peer_id;
+		websocketConnection.send('HELLO ' + peer_id);
+		
+	    });
+         websocketConnection.addEventListener("message", onServerMessage); 
+       } 
+  
+       window.onload = function() { 
+         var vidstream = document.getElementById("stream"); 
+         var config = { 'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }] }; 
+        playStream(vidstream, "127.0.0.1", "8443", null, config, function (errmsg) { console.error(errmsg); }); 
+       }; 
+  
+     </script> 
+   </head> 
+  
+   <body> 
+     <div> 
+     	<h4 id="peer-id"></h4>
+       <video id="stream" autoplay="autoplay" playsinline="">Your browser does not support video</video> 
+     </div> 
+    
+  
+ </body></html>
